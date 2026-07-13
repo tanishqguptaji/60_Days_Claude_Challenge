@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Build a RAG Assistant — Workflow Architect</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root{
+    --bg:#12151c;
+    --bg-raised:#181c25;
+    --bg-panel:#1e2330;
+    --line:#2a3040;
+    --line-soft:#232837;
+    --text:#e8e6df;
+    --text-dim:#9aa1b2;
+    --text-faint:#5f6579;
+    --teal:#5fbeb0;
+    --teal-dim:#3d7d74;
+    --amber:#e0a458;
+    --violet:#8c8fe0;
+    --red:#d9736a;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+    --radius: 10px;
+  }
+  html.light{
+    --bg:#f5f4ef;
+    --bg-raised:#ffffff;
+    --bg-panel:#ffffff;
+    --line:#dcd8cc;
+    --line-soft:#e8e5da;
+    --text:#1b1d22;
+    --text-dim:#5b5f6b;
+    --text-faint:#8b8f9a;
+    --teal:#2f8a7c;
+    --teal-dim:#bfe4de;
+    --amber:#b5761f;
+    --violet:#5457b0;
+    --red:#b8453c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.5; transition:background .3s ease, color .3s ease;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--teal); color:#0b0d12;}
+  a{color:inherit;}
+  .mono{font-family:var(--mono);}
+
+  /* ---------- topbar ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 28px; background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--line-soft);
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--mono); font-weight:700; font-size:15px; letter-spacing:.02em;}
+  .brand .dot{width:9px; height:9px; border-radius:50%; background:var(--teal); box-shadow:0 0 12px var(--teal);}
+  .brand small{color:var(--text-faint); font-weight:400; font-size:11px; display:block; margin-top:2px; letter-spacing:.08em;}
+  .top-actions{display:flex; gap:8px; align-items:center;}
+  .btn{
+    font-family:var(--sans); font-size:13px; font-weight:600; color:var(--text);
+    background:var(--bg-panel); border:1px solid var(--line); border-radius:7px;
+    padding:8px 14px; cursor:pointer; transition:all .15s ease; display:inline-flex; align-items:center; gap:6px;
+  }
+  .btn:hover{border-color:var(--teal); color:var(--teal);}
+  .btn.primary{background:var(--teal); color:#0b0d12; border-color:var(--teal);}
+  .btn.primary:hover{filter:brightness(1.08); color:#0b0d12;}
+  .btn.icon{padding:8px 10px;}
+
+  /* ---------- hero ---------- */
+  .hero{
+    padding:64px 28px 40px; max-width:1180px; margin:0 auto;
+    display:grid; grid-template-columns:1.05fr 1fr; gap:48px; align-items:center;
+  }
+  .hero-eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.14em; color:var(--teal); text-transform:uppercase; margin-bottom:16px; display:flex; gap:10px; align-items:center;}
+  .hero-eyebrow::before{content:''; width:22px; height:1px; background:var(--teal);}
+  .hero h1{font-family:var(--mono); font-size:clamp(28px,4vw,44px); font-weight:800; line-height:1.12; letter-spacing:-.01em; margin-bottom:18px;}
+  .hero h1 span{color:var(--teal);}
+  .hero p{color:var(--text-dim); font-size:16px; max-width:52ch; margin-bottom:26px;}
+  .hero-meta{display:flex; gap:22px; flex-wrap:wrap; margin-bottom:28px;}
+  .hero-meta div{font-family:var(--mono); font-size:12px; color:var(--text-faint);}
+  .hero-meta b{display:block; color:var(--text); font-size:18px; font-family:var(--sans); font-weight:700;}
+  .hero-cta{display:flex; gap:12px;}
+
+  /* pipeline diagram */
+  .diagram-wrap{
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:var(--radius);
+    padding:20px; position:relative; overflow:hidden;
+  }
+  .diagram-wrap::before{content:'rag_pipeline.svg'; position:absolute; top:10px; left:16px; font-family:var(--mono); font-size:10px; color:var(--text-faint); letter-spacing:.05em;}
+  svg{display:block; width:100%; height:auto;}
+  .pipe-node rect{fill:var(--bg-panel); stroke:var(--line); stroke-width:1.2;}
+  .pipe-node text{fill:var(--text); font-family:var(--mono); font-size:10.5px;}
+  .pipe-node .lbl{fill:var(--text-faint); font-size:8.5px;}
+  .pipe-link{stroke:var(--line); stroke-width:1.4; fill:none;}
+  .pipe-pulse{fill:var(--teal); filter:drop-shadow(0 0 6px var(--teal));}
+
+  /* ---------- progress rail ---------- */
+  .layout{max-width:1180px; margin:0 auto; padding:0 28px 100px; display:grid; grid-template-columns:230px 1fr; gap:36px;}
+  .rail{position:sticky; top:74px; align-self:start; height:calc(100vh - 100px); overflow-y:auto; padding-right:6px;}
+  .rail::-webkit-scrollbar{width:4px;} .rail::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+  .progress-box{background:var(--bg-raised); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:16px;}
+  .progress-box .pct{font-family:var(--mono); font-size:26px; font-weight:700; color:var(--teal);}
+  .progress-box .bar{height:5px; background:var(--line-soft); border-radius:4px; overflow:hidden; margin:10px 0 4px;}
+  .progress-box .bar i{display:block; height:100%; background:var(--teal); width:0%; transition:width .4s ease;}
+  .progress-box small{color:var(--text-faint); font-size:11px;}
+  .stage-nav a{
+    display:flex; gap:10px; align-items:flex-start; padding:9px 10px; border-radius:7px;
+    font-size:12.5px; color:var(--text-dim); text-decoration:none; margin-bottom:2px; transition:all .15s;
+    border:1px solid transparent;
+  }
+  .stage-nav a:hover{background:var(--bg-panel); color:var(--text);}
+  .stage-nav a.active{background:var(--bg-panel); border-color:var(--line); color:var(--teal);}
+  .stage-nav .num{font-family:var(--mono); font-size:11px; color:var(--text-faint); min-width:16px;}
+  .stage-nav a.done .num{color:var(--teal);}
+  .stage-nav .chk{margin-left:auto; opacity:0; font-size:11px;}
+  .stage-nav a.done .chk{opacity:1; color:var(--teal);}
+
+  /* ---------- main content ---------- */
+  main{min-width:0;}
+  section.stage{
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:14px;
+    padding:30px 32px; margin-bottom:22px; scroll-margin-top:80px;
+  }
+  .stage-head{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:6px; flex-wrap:wrap;}
+  .stage-head .idx{font-family:var(--mono); color:var(--teal); font-size:13px; letter-spacing:.06em;}
+  .stage-head h2{font-family:var(--mono); font-size:24px; font-weight:700; margin:4px 0 8px;}
+  .stage-sub{color:var(--text-dim); font-size:14px; max-width:60ch;}
+  .stage-time{font-family:var(--mono); font-size:11px; background:var(--bg-panel); border:1px solid var(--line); padding:6px 10px; border-radius:20px; color:var(--amber); white-space:nowrap;}
+  .mark-done{display:flex; align-items:center; gap:8px; margin:16px 0 22px; font-size:13px; color:var(--text-dim); cursor:pointer; user-select:none;}
+  .mark-done input{accent-color:var(--teal); width:15px; height:15px; cursor:pointer;}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-bottom:22px;}
+  h3.sec-label{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-faint); margin-bottom:10px; display:flex; align-items:center; gap:8px;}
+  h3.sec-label::after{content:''; flex:1; height:1px; background:var(--line-soft);}
+  ul.tick{list-style:none;}
+  ul.tick li{padding-left:18px; position:relative; margin-bottom:7px; font-size:13.5px; color:var(--text);}
+  ul.tick li::before{content:'›'; position:absolute; left:0; color:var(--teal); font-weight:700;}
+  ul.mistakes li::before{content:'✕'; color:var(--red); font-size:10px; top:3px;}
+  ul.plain{list-style:none;}
+  ul.plain li{padding-left:16px; position:relative; margin-bottom:7px; font-size:13.5px; color:var(--text-dim);}
+  ul.plain li::before{content:'—'; position:absolute; left:0; color:var(--text-faint);}
+
+  .tool-card{background:var(--bg-panel); border:1px solid var(--line); border-radius:9px; padding:14px 16px; margin-bottom:10px;}
+  .tool-card .tname{font-family:var(--mono); font-weight:700; font-size:14px; color:var(--teal); display:flex; justify-content:space-between; align-items:center;}
+  .tool-card .why{font-size:12.5px; color:var(--text-dim); margin-top:5px;}
+  .tool-card .alt{font-size:11.5px; color:var(--text-faint); margin-top:6px;}
+  .tool-card .alt b{color:var(--violet); font-weight:600;}
+
+  .prompt-box{background:#0b0d12; border:1px solid var(--line); border-radius:9px; padding:14px 16px; margin-bottom:10px; position:relative;}
+  html.light .prompt-box{background:#f0efe8;}
+  .prompt-box code{font-family:var(--mono); font-size:12px; color:var(--teal); white-space:pre-wrap; display:block; padding-right:60px;}
+  .copy-btn{position:absolute; top:10px; right:10px; font-family:var(--mono); font-size:10px; background:var(--bg-panel); border:1px solid var(--line); color:var(--text-dim); border-radius:5px; padding:4px 8px; cursor:pointer;}
+  .copy-btn:hover{color:var(--teal); border-color:var(--teal);}
+
+  .outputs-row{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:6px;}
+  .chip{font-family:var(--mono); font-size:11px; background:var(--bg-panel); border:1px solid var(--line); padding:6px 11px; border-radius:20px; color:var(--text-dim);}
+  .chip.amber{color:var(--amber); border-color:color-mix(in srgb, var(--amber) 40%, var(--line));}
+
+  .notes-area{width:100%; background:var(--bg-panel); border:1px solid var(--line); border-radius:9px; padding:12px; color:var(--text); font-family:var(--sans); font-size:13px; resize:vertical; min-height:60px;}
+  .notes-area:focus{outline:none; border-color:var(--teal);}
+  .stage-foot{display:flex; justify-content:space-between; align-items:center; margin-top:18px; gap:10px; flex-wrap:wrap;}
+  .bookmark-btn{background:none; border:none; cursor:pointer; color:var(--text-faint); font-size:18px;}
+  .bookmark-btn.active{color:var(--amber);}
+
+  /* comparison + decision tree */
+  .compare-table{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px;}
+  .compare-table th, .compare-table td{border:1px solid var(--line); padding:9px 12px; text-align:left;}
+  .compare-table th{background:var(--bg-panel); font-family:var(--mono); font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em;}
+  .compare-table td.good{color:var(--teal);}
+  .compare-table td.bad{color:var(--red);}
+
+  .dtree{display:flex; flex-direction:column; gap:10px; margin-top:6px;}
+  .dtree .q{background:var(--bg-panel); border:1px solid var(--line); border-radius:9px; padding:12px 14px; font-size:13px;}
+  .dtree .q b{color:var(--violet); font-family:var(--mono); font-size:11px; display:block; margin-bottom:4px;}
+  .dtree .branch{display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;}
+  .dtree .branch span{font-size:12px; background:var(--bg-raised); border:1px solid var(--line-soft); border-radius:6px; padding:6px 10px; color:var(--text-dim);}
+  .dtree .branch span b{color:var(--teal);}
+
+  /* summary / final sections */
+  .final-section{background:var(--bg-raised); border:1px solid var(--line); border-radius:14px; padding:30px 32px; margin-bottom:22px;}
+  .final-section h2{font-family:var(--mono); font-size:20px; margin-bottom:16px; display:flex; gap:10px; align-items:center;}
+  .stack-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px;}
+  .stack-card{background:var(--bg-panel); border:1px solid var(--line); border-radius:9px; padding:14px;}
+  .stack-card b{font-family:var(--mono); color:var(--teal); font-size:13px; display:block; margin-bottom:4px;}
+  .stack-card span{font-size:11.5px; color:var(--text-faint);}
+  .tag-cloud{display:flex; flex-wrap:wrap; gap:8px;}
+  .tag-cloud span{font-family:var(--mono); font-size:11.5px; background:var(--bg-panel); border:1px solid var(--line); padding:6px 12px; border-radius:20px; color:var(--text-dim);}
+  .link-list a{display:block; font-size:13.5px; color:var(--teal); text-decoration:none; margin-bottom:8px; padding-left:14px; position:relative;}
+  .link-list a::before{content:'↗'; position:absolute; left:0;}
+  .link-list a:hover{text-decoration:underline;}
+
+  footer{text-align:center; padding:30px; color:var(--text-faint); font-size:11.5px; font-family:var(--mono);}
+
+  @media (max-width:900px){
+    .hero{grid-template-columns:1fr; padding-top:36px;}
+    .layout{grid-template-columns:1fr;}
+    .rail{position:static; height:auto; margin-bottom:20px;}
+    .grid2{grid-template-columns:1fr;}
+  }
+  @media print{
+    .topbar, .rail, .top-actions, .copy-btn, .bookmark-btn, .mark-done{display:none !important;}
+    body{background:#fff; color:#111;}
+    section.stage, .final-section{border:1px solid #ccc; break-inside:avoid; background:#fff;}
+    .layout{grid-template-columns:1fr; display:block;}
+  }
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important;} }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot"></span>AI WORKFLOW ARCHITECT<small>RAG KNOWLEDGE ASSISTANT — BUILD PLAN</small></div>
+  <div class="top-actions">
+    <button class="btn icon" id="themeBtn" title="Toggle theme">◐</button>
+    <button class="btn" id="printBtn">Print guide</button>
+    <button class="btn primary" id="resetBtn">Reset progress</button>
+  </div>
+</div>
+
+<div class="hero">
+  <div>
+    <div class="hero-eyebrow">Software Development → AI/ML Engineering → LLM Product</div>
+    <h1>Ship a <span>RAG-based</span> knowledge assistant, start to finish.</h1>
+    <p>An end-to-end execution map — not generic advice — for taking a retrieval-augmented chatbot from a blank repo to a monitored production release, with the tools, prompts and pitfalls for every stage.</p>
+    <div class="hero-meta">
+      <div><b>8</b>stages</div>
+      <div><b>3–6 wks</b>solo build estimate</div>
+      <div><b>24+</b>tool recommendations</div>
+      <div><b>18</b>ready prompts</div>
+    </div>
+    <div class="hero-cta">
+      <button class="btn primary" onclick="document.getElementById('stage-1').scrollIntoView({behavior:'smooth'})">Start at Stage 1</button>
+      <button class="btn" onclick="document.getElementById('summary').scrollIntoView({behavior:'smooth'})">Jump to summary</button>
+    </div>
+  </div>
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 460 300" id="pipeSvg">
+      <!-- links -->
+      <path class="pipe-link" d="M60,40 H140" />
+      <path class="pipe-link" d="M60,110 H140" />
+      <path class="pipe-link" d="M220,75 L280,75" />
+      <path class="pipe-link" d="M340,75 L400,75" />
+      <path class="pipe-link" d="M400,95 V150 H340" />
+      <path class="pipe-link" d="M280,170 H220" />
+      <path class="pipe-link" d="M160,170 V230 H240" />
+      <path class="pipe-link" d="M320,230 H380 V190" />
+      <!-- nodes -->
+      <g class="pipe-node"><rect x="0" y="20" width="60" height="40" rx="6"/><text x="30" y="36" text-anchor="middle">Docs</text><text x="30" y="49" text-anchor="middle" class="lbl">source data</text></g>
+      <g class="pipe-node"><rect x="0" y="90" width="60" height="40" rx="6"/><text x="30" y="106" text-anchor="middle">FAQs</text><text x="30" y="119" text-anchor="middle" class="lbl">source data</text></g>
+      <g class="pipe-node"><rect x="140" y="55" width="80" height="40" rx="6"/><text x="180" y="72" text-anchor="middle">Chunk +</text><text x="180" y="84" text-anchor="middle">Embed</text></g>
+      <g class="pipe-node"><rect x="280" y="55" width="60" height="40" rx="6"/><text x="310" y="72" text-anchor="middle">Vector</text><text x="310" y="84" text-anchor="middle">Store</text></g>
+      <g class="pipe-node"><rect x="400" y="55" width="55" height="40" rx="6"/><text x="427" y="72" text-anchor="middle" style="font-size:9.5px">User</text><text x="427" y="84" text-anchor="middle" style="font-size:9.5px">Query</text></g>
+      <g class="pipe-node"><rect x="280" y="150" width="60" height="40" rx="6"/><text x="310" y="166" text-anchor="middle">Retrieve</text><text x="310" y="178" text-anchor="middle" class="lbl">top-k</text></g>
+      <g class="pipe-node"><rect x="160" y="150" width="60" height="40" rx="6"/><text x="190" y="166" text-anchor="middle">LLM</text><text x="190" y="178" text-anchor="middle" class="lbl">generate</text></g>
+      <g class="pipe-node"><rect x="240" y="210" width="80" height="40" rx="6"/><text x="280" y="226" text-anchor="middle">Guardrails</text><text x="280" y="238" text-anchor="middle" class="lbl">check + cite</text></g>
+      <g class="pipe-node"><rect x="350" y="170" width="60" height="40" rx="6"/><text x="380" y="186" text-anchor="middle">Answer</text><text x="380" y="198" text-anchor="middle" class="lbl">to user</text></g>
+      <circle class="pipe-pulse" r="4" id="pulse"><animateMotion dur="5s" repeatCount="indefinite" path="M400,75 L340,75 L280,75 L220,75 L190,95 L190,150 L280,170 L280,190 L320,230 L380,230 L380,190" /></circle>
+    </svg>
+  </div>
+</div>
+
+<div class="layout">
+  <aside class="rail">
+    <div class="progress-box">
+      <div class="pct" id="pctText">0%</div>
+      <div class="bar"><i id="pctBar"></i></div>
+      <small id="pctSub">0 of 8 stages complete</small>
+    </div>
+    <nav class="stage-nav" id="stageNav"></nav>
+  </aside>
+
+  <main id="mainContent">
+    <!-- stages injected by JS -->
+    <div id="stagesRoot"></div>
+
+    <section class="final-section" id="summary">
+      <h2>📋 Workflow summary</h2>
+      <p style="color:var(--text-dim); font-size:14px; max-width:70ch; margin-bottom:8px;">
+      You're moving raw documents through ingestion, chunking, embedding, retrieval, generation, evaluation, deployment, and monitoring — a closed loop where production feedback continually reshapes chunking and retrieval upstream. The build is rarely linear in practice: expect to revisit Stage 2 and 3 after your first evaluation pass in Stage 6.
+      </p>
+    </section>
+
+    <section class="final-section">
+      <h2>🧰 Recommended AI stack</h2>
+      <div class="stack-grid" id="stackGrid"></div>
+    </section>
+
+    <section class="final-section">
+      <h2>📚 Learning resources</h2>
+      <div class="link-list" id="learnList"></div>
+    </section>
+
+    <section class="final-section">
+      <h2>👥 Communities</h2>
+      <div class="link-list" id="commList"></div>
+    </section>
+
+    <section class="final-section">
+      <h2>🔎 Search keywords</h2>
+      <div class="tag-cloud" id="kwCloud"></div>
+    </section>
+
+    <section class="final-section">
+      <h2>💬 Additional prompts to keep handy</h2>
+      <div id="extraPrompts"></div>
+    </section>
+
+    <section class="final-section">
+      <h2>🚀 Future automation opportunities</h2>
+      <ul class="tick" id="futureList"></ul>
+    </section>
+  </main>
+</div>
+
+<footer>AI WORKFLOW ARCHITECT — generated build plan · your notes, bookmarks and progress are saved locally in this browser only</footer>
+
+<script>
+/* ============ DATA ============ */
+const STAGES = [
+{
+  id:1, title:"Discovery & Scoping", sub:"Define what the assistant must answer, for whom, and what 'good' looks like before writing code.", time:"2–4 days",
+  objectives:["Pin down the exact question set the assistant must handle","Identify source-of-truth documents and their owners","Set a measurable success bar (accuracy, latency, cost)","Decide build-vs-buy for the core stack"],
+  tasks:["Interview 3–5 target users about the questions they'd actually ask","Audit existing docs for volume, format, and freshness","Draft 20 'golden' Q&A pairs to use as your eval set later","Write a one-page scope doc: in-scope topics, out-of-scope topics, tone"],
+  tools:[
+    {name:"Claude", why:"Strong at turning messy interview notes and scattered docs into a structured scope doc and clean golden Q&A set.", alt:"ChatGPT, Gemini"},
+    {name:"Notion AI", why:"Good for collaborative scope docs the whole team can comment on live.", alt:"Coda, Confluence"},
+    {name:"Otter.ai", why:"Transcribes stakeholder interviews so nothing said in a 30-min call gets lost.", alt:"Fireflies.ai"}
+  ],
+  prompts:[
+    "Here are 5 raw interview transcripts about how support agents answer product questions. Extract the 15 most frequently repeated question types, group them into themes, and flag any that reveal outdated documentation.",
+    "Turn these bullet notes into a one-page project scope doc with sections: Objective, In-Scope Topics, Out-of-Scope Topics, Tone & Voice, Success Metrics."
+  ],
+  best:["Write the eval set before you write any retrieval code — it anchors every later decision","Get one person to explicitly 'own' source-document accuracy","Scope tone and refusal behavior now, not after launch"],
+  mistakes:["Skipping user interviews and guessing at question types","Starting with the vector database instead of the questions","No defined 'I don't know' behavior for out-of-scope queries"],
+  outputs:["One-page scope document","Golden Q&A eval set (20+ pairs)","List of source documents with owners"],
+  tips:["Keep the golden set in a spreadsheet — you'll append to it every stage"]
+},
+{
+  id:2, title:"Data Ingestion & Preparation", sub:"Get source documents into clean, structured, machine-readable text.", time:"3–7 days",
+  objectives:["Pull content from every source system into one pipeline","Normalize formats (PDF, HTML, Notion, Confluence) into plain text/markdown","Strip boilerplate, nav menus, and duplicate content","Attach metadata (source, date, owner, access level) to every document"],
+  tasks:["Write extractors/connectors for each source system","De-duplicate near-identical documents","Tag documents with metadata for later filtering","Set a refresh cadence for documents that change often"],
+  tools:[
+    {name:"LlamaIndex (data connectors)", why:"Largest library of pre-built loaders for PDFs, Notion, Confluence, Slack, and more — saves weeks of custom parsing.", alt:"Unstructured.io, LangChain document loaders"},
+    {name:"Unstructured.io", why:"Best-in-class at pulling clean text out of messy PDFs and scanned documents, including tables.", alt:"Apache Tika, PyMuPDF"},
+    {name:"Claude", why:"Useful for writing one-off parsing scripts and spotting messy edge cases in sample extractions.", alt:"GitHub Copilot, Cursor"}
+  ],
+  prompts:[
+    "Here's a sample of raw HTML extracted from our help center. Write a Python function using BeautifulSoup that strips navigation, footers, and ads, keeping only the article body and headings.",
+    "Review this batch of extracted documents and flag any that look like duplicates, stubs, or clearly outdated (mention old product names or deprecated features)."
+  ],
+  best:["Preserve heading structure — it becomes retrieval context later","Store raw + cleaned versions so you can re-process without re-fetching","Version your ingestion pipeline; source docs will change"],
+  mistakes:["Losing document structure (headings, tables) during cleaning","Ingesting without deduplication, inflating the index with near-copies","No metadata, making later filtering by source or recency impossible"],
+  outputs:["Cleaned, normalized text corpus","Metadata schema and tagged documents","Ingestion pipeline script or connector config"],
+  tips:["Sample-check 10 random cleaned docs by hand before scaling to the full corpus"]
+},
+{
+  id:3, title:"Chunking & Embedding Strategy", sub:"Decide how documents are split and turned into vectors — the single highest-leverage decision in the whole build.", time:"3–5 days",
+  objectives:["Choose a chunking strategy suited to your content type","Select an embedding model balancing quality, cost, and latency","Preserve enough context per chunk for standalone retrieval","Benchmark chunk size against your golden eval set"],
+  tasks:["Prototype 2–3 chunking strategies (fixed-size, semantic, heading-based)","Run embeddings on a sample set and inspect nearest-neighbor quality","Decide on overlap size and metadata to attach per chunk","Lock in an embedding model and document the choice"],
+  tools:[
+    {name:"OpenAI text-embedding-3", why:"Strong general-purpose quality-to-cost ratio and widely supported by every major vector DB.", alt:"Cohere Embed v3, Voyage AI"},
+    {name:"Voyage AI embeddings", why:"Often outperforms on domain-specific/technical corpora and offers rerankers in the same family.", alt:"OpenAI, open-source BGE models"},
+    {name:"LangChain text splitters", why:"Ready-made recursive and semantic splitters so you're not hand-rolling chunk logic.", alt:"LlamaIndex node parsers"}
+  ],
+  prompts:[
+    "Given this document's heading structure, propose a chunking scheme that keeps each chunk semantically self-contained, with suggested max chunk size and overlap.",
+    "Here are 8 retrieved chunks for the query '[golden question]'. Rate each 1–5 on whether it alone would let someone answer the question, and explain the lowest-scoring ones."
+  ],
+  best:["Chunk by semantic/heading boundaries before falling back to fixed token windows","Include a short document title/section header inside every chunk's text","Re-run your golden eval set every time you change chunk size"],
+  mistakes:["Chunking purely by token count with no regard for sentence/paragraph boundaries","Zero overlap between chunks, losing context at the seams","Never revisiting chunk size after initial setup, even as content grows"],
+  outputs:["Documented chunking strategy with size/overlap parameters","Embedding model decision with cost/latency notes","Sample chunk quality report against golden set"],
+  tips:["Cache embeddings — re-embedding a full corpus on every change gets expensive fast"]
+},
+{
+  id:4, title:"Vector Store & Retrieval Design", sub:"Pick where vectors live and how a query becomes the right set of retrieved chunks.", time:"3–6 days",
+  objectives:["Select a vector database matching scale and ops preference","Design the retrieval flow: filters, hybrid search, reranking","Tune top-k and similarity thresholds","Handle multi-source and access-controlled retrieval if needed"],
+  tasks:["Stand up the vector store and load embedded chunks","Implement metadata filtering (by source, date, permission)","Add a reranking step for top-k candidates","Tune retrieval parameters against the golden eval set"],
+  tools:[
+    {name:"Pinecone", why:"Fully managed, scales with near-zero ops overhead — good default if you don't want to run infrastructure.", alt:"Weaviate, Qdrant"},
+    {name:"Qdrant", why:"Strong open-source option if you want self-hosting or tighter cost control, with solid hybrid search support.", alt:"Pinecone, pgvector"},
+    {name:"Cohere Rerank", why:"A dedicated reranker meaningfully improves precision on the top few retrieved chunks versus similarity search alone.", alt:"Voyage rerank, cross-encoder models"}
+  ],
+  prompts:[
+    "Design a retrieval flow diagram in text form: query → filters → vector search → rerank → context assembly. Include where metadata filtering should apply.",
+    "Given these 5 queries and their retrieved chunks (with scores), tell me if top_k=5 and similarity_threshold=0.75 is too strict, too loose, or about right, and why."
+  ],
+  best:["Add hybrid search (keyword + vector) for queries with exact product names/codes","Rerank before truncating to your final context window","Log every retrieval — you'll need it for stage-6 evaluation"],
+  mistakes:["Using pure vector similarity with no keyword fallback, missing exact-match queries","Setting top-k too high and drowning the LLM in noisy context","No access-control filtering, leaking restricted content to unauthorized users"],
+  outputs:["Configured vector store with indexed corpus","Retrieval pipeline (filter → search → rerank)","Tuned top-k/threshold parameters, documented"],
+  tips:["Log retrieval latency separately from generation latency — they get optimized differently"]
+},
+{
+  id:5, title:"Prompt & Generation Layer", sub:"Turn retrieved context and a user question into a grounded, well-formatted answer.", time:"4–7 days",
+  objectives:["Design the system prompt for grounded, citation-backed answers","Pick a generation model balancing quality, latency, and cost","Handle conversation history/multi-turn context","Define fallback behavior for low-confidence retrieval"],
+  tasks:["Draft and iterate the system prompt with explicit citation instructions","Wire retrieved chunks into the context window with source markers","Implement conversation memory/summarization for multi-turn chats","Build the 'insufficient context, ask a human' fallback path"],
+  tools:[
+    {name:"Claude", why:"Strong instruction-following for citation formatting and reliably saying 'I don't know' when context is thin, reducing hallucination.", alt:"GPT-4.1, Gemini 2.5"},
+    {name:"LangSmith prompt playground", why:"Lets you iterate prompts against real retrieved context side-by-side and compare versions.", alt:"PromptLayer, Braintrust"},
+    {name:"LangChain / LlamaIndex", why:"Orchestration layers that handle context assembly, memory, and citation formatting without hand-rolled glue code.", alt:"Custom orchestration, Haystack"}
+  ],
+  prompts:[
+    "Write a system prompt for a support chatbot that must only answer using provided context chunks, cite the source document for every claim, and explicitly say it doesn't know when context is insufficient — keep it under 200 words.",
+    "Here's a user question, 3 retrieved chunks, and a draft answer. Check whether every claim in the answer is actually supported by the chunks, and flag any unsupported statements."
+  ],
+  best:["Explicitly instruct the model to refuse when context doesn't cover the question","Show source citations inline, not just as a footer list","Summarize older turns instead of stuffing full history into context"],
+  mistakes:["Vague system prompts that let the model answer from general knowledge instead of retrieved context","No citation mechanism, making answers impossible to verify","Ignoring conversation history, so follow-up questions lose context"],
+  outputs:["Finalized system + generation prompt","Context assembly and citation logic","Conversation memory strategy"],
+  tips:["Version every prompt change — a single word can shift accuracy on your eval set noticeably"]
+},
+{
+  id:6, title:"Evaluation & Guardrails", sub:"Prove the assistant is accurate, safe, and ready — before real users touch it.", time:"4–6 days",
+  objectives:["Run the golden Q&A set through the full pipeline and score it","Test for hallucination, refusal correctness, and citation accuracy","Add guardrails for off-topic, unsafe, or adversarial prompts","Set a quality bar that must be met before launch"],
+  tasks:["Automate golden-set scoring (correctness, groundedness, citation accuracy)","Red-team the assistant with adversarial and off-topic prompts","Add input/output moderation or topic-boundary checks","Document known failure modes and their severity"],
+  tools:[
+    {name:"Ragas", why:"Purpose-built RAG evaluation metrics (faithfulness, context precision/recall) that map directly to what can go wrong in this architecture.", alt:"TruLens, DeepEval"},
+    {name:"LangSmith", why:"Traces full request pipelines end to end, making it easy to see exactly where a bad answer originated.", alt:"Braintrust, Arize Phoenix"},
+    {name:"Claude", why:"Effective as an 'LLM judge' to score groundedness and flag unsupported claims at scale across hundreds of eval rows.", alt:"GPT-4.1 as judge"}
+  ],
+  prompts:[
+    "Act as an evaluator. Given this question, the retrieved context, and the generated answer, score groundedness 1–5 (is every claim supported by context?) and explain your score in one sentence.",
+    "Generate 15 adversarial test prompts designed to make a support chatbot break scope, leak instructions, or answer confidently despite missing context."
+  ],
+  best:["Automate re-scoring so every prompt/retrieval change is regression-tested","Track groundedness and refusal-accuracy as separate metrics, not one blended score","Keep a running log of real failure cases from red-teaming"],
+  mistakes:["Only spot-checking answers manually instead of automating eval","Treating 'sounds confident' as a proxy for 'is correct'","Skipping adversarial testing before launch"],
+  outputs:["Automated eval report against golden set","Red-team findings and mitigations","Documented quality bar and guardrail rules"],
+  tips:["Set a numeric bar (e.g. ≥90% groundedness) as a literal go/no-go gate for launch"]
+},
+{
+  id:7, title:"Deployment & Integration", sub:"Ship the assistant into the channel where users actually need it.", time:"4–8 days",
+  objectives:["Deploy the pipeline as a scalable, low-latency service","Integrate into the target channel (web widget, Slack, help desk)","Set up authentication and rate limiting","Establish a rollback plan for bad releases"],
+  tasks:["Containerize and deploy the retrieval + generation service","Build or embed the chat UI in the target surface","Add auth, rate limiting, and cost caps per user/org","Run a staged rollout to a small user group first"],
+  tools:[
+    {name:"Vercel / Render", why:"Fast, low-ops deployment for the API and chat UI, good fit for small-to-mid scale launches.", alt:"AWS ECS, Fly.io"},
+    {name:"LangServe", why:"Turns a LangChain pipeline into a production API with streaming support out of the box.", alt:"FastAPI custom service"},
+    {name:"Cursor / GitHub Copilot", why:"Speeds up writing the deployment scaffolding, auth middleware, and integration glue code.", alt:"Claude Code, Windsurf"}
+  ],
+  prompts:[
+    "Write a FastAPI endpoint that streams tokens from this RAG pipeline function, includes basic API-key auth, and rate-limits to 30 requests/minute per key.",
+    "Review this deployment checklist for a customer-facing chatbot and flag anything missing around security, rate limiting, or rollback safety."
+  ],
+  best:["Roll out to 5–10% of users first and watch the eval metrics on real traffic","Set hard cost caps per user/session to avoid runaway API spend","Keep a one-click rollback to the previous prompt/retrieval config"],
+  mistakes:["Full launch with no staged rollout or feature flag","No rate limiting, exposing the service to cost-draining abuse","Skipping load testing before a real traffic spike"],
+  outputs:["Deployed, authenticated API + chat UI","Staged rollout plan and rollback procedure","Cost and rate-limit configuration"],
+  tips:["Log every production request/response pair — it becomes stage-8 monitoring data on day one"]
+},
+{
+  id:8, title:"Monitoring & Iteration", sub:"Keep the assistant accurate as content, users, and usage patterns evolve.", time:"ongoing",
+  objectives:["Track live accuracy, latency, and cost against targets","Surface unanswered or low-confidence queries for review","Feed real user questions back into the golden eval set","Establish a cadence for re-indexing updated source content"],
+  tasks:["Build a dashboard for groundedness, latency, cost, and volume","Set alerts for spikes in refusals or low-confidence answers","Weekly review of flagged conversations with product/content owners","Automate re-embedding when source documents change"],
+  tools:[
+    {name:"LangSmith / Arize Phoenix", why:"Purpose-built LLM observability for tracing production requests and spotting drift in retrieval quality.", alt:"Datadog LLM Observability, Helicone"},
+    {name:"Retool / Metabase", why:"Quick internal dashboards for non-engineers to review flagged conversations and metrics.", alt:"Grafana, custom admin panel"},
+    {name:"Claude", why:"Good at triaging batches of flagged conversations and summarizing recurring failure themes for weekly reviews.", alt:"GPT-4.1 batch summarization"}
+  ],
+  prompts:[
+    "Here are 40 flagged low-confidence conversations from this week. Group them into recurring themes and suggest which ones indicate a documentation gap versus a retrieval bug.",
+    "Write a weekly monitoring report template covering: query volume, groundedness score trend, top unanswered questions, and recommended content updates."
+  ],
+  best:["Treat every unanswered question as a candidate new document, not just a bug","Re-run the full golden eval set after every source re-index","Close the loop: flagged queries → content fix → eval set update"],
+  mistakes:["Launching monitoring but never assigning anyone to act on it weekly","Letting the golden eval set go stale while real usage evolves","No re-indexing cadence, so the assistant quietly goes out of date"],
+  outputs:["Live monitoring dashboard","Weekly triage report and action log","Continuously updated golden eval set and source corpus"],
+  tips:["The best long-term signal is simply: what did users ask that the assistant couldn't answer well?"]
+}
+];
+
+const COMPARE = {
+  title:"Vector database comparison",
+  head:["Option","Best for","Ops overhead","Cost at scale"],
+  rows:[
+    ["Pinecone","Fast launch, no infra team","Low","$$"],
+    ["Qdrant","Cost control, self-hosting","Medium","$"],
+    ["pgvector","Already using Postgres","Low–Medium","$"],
+    ["Weaviate","Built-in hybrid search","Medium","$$"]
+  ]
+};
+
+const DTREE = [
+  {q:"Is your source content small (<5k docs) and mostly static?", branches:[["Yes","Consider pgvector — lower ops, good enough scale"],["No","Move to a dedicated vector DB like Pinecone or Qdrant"]]},
+  {q:"Do users need exact-match lookups (product codes, IDs)?", branches:[["Yes","Add hybrid keyword+vector search, not vector-only"],["No","Pure vector similarity is likely sufficient"]]},
+  {q:"Is answer traceability a compliance requirement?", branches:[["Yes","Mandatory inline citations + groundedness gate before launch"],["No","Citations still recommended, but less strict enforcement needed"]]}
+];
+
+const STACK = [
+  {name:"Claude", role:"Reasoning, prompt design, eval judging"},
+  {name:"OpenAI text-embedding-3 / Voyage AI", role:"Embeddings"},
+  {name:"Qdrant / Pinecone", role:"Vector storage & retrieval"},
+  {name:"Cohere Rerank", role:"Precision boost on retrieved chunks"},
+  {name:"LangChain / LlamaIndex", role:"Orchestration & connectors"},
+  {name:"Ragas + LangSmith", role:"Evaluation & tracing"},
+  {name:"Vercel / Render", role:"Deployment"},
+  {name:"Arize Phoenix", role:"Production monitoring"}
+];
+
+const LEARN = [
+  ["Pinecone Learning Center — RAG fundamentals","https://www.pinecone.io/learn/"],
+  ["LlamaIndex documentation","https://docs.llamaindex.ai/"],
+  ["LangChain RAG tutorials","https://python.langchain.com/docs/tutorials/rag/"],
+  ["Ragas evaluation docs","https://docs.ragas.io/"]
+];
+const COMMUNITIES = [
+  ["r/LangChain","https://www.reddit.com/r/LangChain/"],
+  ["MLOps Community Slack","https://mlops.community/"],
+  ["Latent Space Discord","https://www.latent.space/"]
+];
+const KEYWORDS = ["RAG architecture","chunking strategy","vector database comparison","embedding model benchmark","hallucination evaluation LLM","hybrid search reranking","LLM observability tools","prompt versioning"];
+const EXTRA_PROMPTS = [
+  "Audit this system prompt for ambiguity that could let the model answer outside the provided context.",
+  "Given our current groundedness score of 84%, suggest 5 concrete changes to chunking or retrieval most likely to raise it.",
+  "Summarize this week's flagged conversations into 3 recommended content updates for the docs team."
+];
+const FUTURE = [
+  "Auto-generate new golden eval questions from real unanswered queries each week",
+  "Auto-trigger re-embedding when a source document's edit timestamp changes",
+  "Route low-confidence answers to a human-in-the-loop queue automatically",
+  "A/B test system-prompt variants against live groundedness scores"
+];
+
+/* ============ STATE ============ */
+const state = JSON.parse(localStorage.getItem('ragWorkflowState') || '{"done":{},"notes":{},"bookmarks":{},"theme":"dark"}');
+function save(){ localStorage.setItem('ragWorkflowState', JSON.stringify(state)); }
+
+/* ============ RENDER STAGES ============ */
+const root = document.getElementById('stagesRoot');
+const nav = document.getElementById('stageNav');
+
+STAGES.forEach(s=>{
+  const navA = document.createElement('a');
+  navA.href = '#stage-'+s.id;
+  navA.dataset.id = s.id;
+  navA.innerHTML = `<span class="num">${String(s.id).padStart(2,'0')}</span><span>${s.title}</span><span class="chk">✓</span>`;
+  nav.appendChild(navA);
+
+  const sec = document.createElement('section');
+  sec.className='stage'; sec.id='stage-'+s.id;
+  sec.innerHTML = `
+    <div class="stage-head">
+      <div>
+        <div class="idx">STAGE ${String(s.id).padStart(2,'0')} / 08</div>
+        <h2>${s.title}</h2>
+        <div class="stage-sub">${s.sub}</div>
+      </div>
+      <div class="stage-time mono">⏱ ${s.time}</div>
+    </div>
+    <label class="mark-done"><input type="checkbox" data-done="${s.id}"> Mark this stage complete</label>
+
+    <div class="grid2">
+      <div><h3 class="sec-label">Objectives</h3><ul class="tick">${s.objectives.map(o=>`<li>${o}</li>`).join('')}</ul></div>
+      <div><h3 class="sec-label">Tasks</h3><ul class="tick">${s.tasks.map(o=>`<li>${o}</li>`).join('')}</ul></div>
+    </div>
+
+    <h3 class="sec-label">Best AI tools for this stage</h3>
+    ${s.tools.map(t=>`<div class="tool-card"><div class="tname">${t.name}</div><div class="why">${t.why}</div><div class="alt"><b>Alternatives:</b> ${t.alt}</div></div>`).join('')}
+
+    <h3 class="sec-label">Prompt examples</h3>
+    ${s.prompts.map(p=>`<div class="prompt-box"><code>${p}</code><button class="copy-btn" data-copy="${encodeURIComponent(p)}">Copy</button></div>`).join('')}
+
+    <div class="grid2">
+      <div><h3 class="sec-label">Best practices</h3><ul class="tick">${s.best.map(o=>`<li>${o}</li>`).join('')}</ul></div>
+      <div><h3 class="sec-label">Common mistakes</h3><ul class="tick mistakes">${s.mistakes.map(o=>`<li>${o}</li>`).join('')}</ul></div>
+    </div>
+
+    <h3 class="sec-label">Expected outputs</h3>
+    <div class="outputs-row">${s.outputs.map(o=>`<span class="chip">${o}</span>`).join('')}</div>
+
+    <h3 class="sec-label" style="margin-top:16px;">Efficiency tips</h3>
+    <ul class="plain">${s.tips.map(o=>`<li>${o}</li>`).join('')}</ul>
+
+    ${s.id===4 ? renderCompare() : ''}
+    ${s.id===4 ? renderDTree() : ''}
+
+    <h3 class="sec-label" style="margin-top:18px;">Your notes</h3>
+    <textarea class="notes-area" data-notes="${s.id}" placeholder="Jot anything specific to your build here…">${state.notes[s.id]||''}</textarea>
+
+    <div class="stage-foot">
+      <button class="bookmark-btn ${state.bookmarks[s.id]?'active':''}" data-bookmark="${s.id}" title="Bookmark this stage">★ Bookmark</button>
+      <span class="chip amber mono">Stage ${s.id} of 8</span>
+    </div>
+  `;
+  root.appendChild(sec);
+});
+
+function renderCompare(){
+  return `<h3 class="sec-label" style="margin-top:20px;">${COMPARE.title}</h3>
+  <table class="compare-table"><thead><tr>${COMPARE.head.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+  <tbody>${COMPARE.rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${i===2&&c==='Low'?'good':i===2&&c==='Medium'?'':''}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+function renderDTree(){
+  return `<h3 class="sec-label" style="margin-top:20px;">Decision tree: choosing your retrieval setup</h3>
+  <div class="dtree">${DTREE.map((d,i)=>`<div class="q"><b>Q${i+1}</b>${d.q}<div class="branch">${d.branches.map(b=>`<span><b>${b[0]}:</b> ${b[1]}</span>`).join('')}</div></div>`).join('')}</div>`;
+}
+
+/* ============ RENDER FINAL SECTIONS ============ */
+document.getElementById('stackGrid').innerHTML = STACK.map(t=>`<div class="stack-card"><b>${t.name}</b><span>${t.role}</span></div>`).join('');
+document.getElementById('learnList').innerHTML = LEARN.map(l=>`<a href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join('');
+document.getElementById('commList').innerHTML = COMMUNITIES.map(l=>`<a href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join('');
+document.getElementById('kwCloud').innerHTML = KEYWORDS.map(k=>`<span>${k}</span>`).join('');
+document.getElementById('extraPrompts').innerHTML = EXTRA_PROMPTS.map(p=>`<div class="prompt-box"><code>${p}</code><button class="copy-btn" data-copy="${encodeURIComponent(p)}">Copy</button></div>`).join('');
+document.getElementById('futureList').innerHTML = FUTURE.map(f=>`<li>${f}</li>`).join('');
+
+/* ============ INTERACTIONS ============ */
+function updateProgress(){
+  const total = STAGES.length;
+  const done = Object.values(state.done).filter(Boolean).length;
+  const pct = Math.round((done/total)*100);
+  document.getElementById('pctText').textContent = pct+'%';
+  document.getElementById('pctBar').style.width = pct+'%';
+  document.getElementById('pctSub').textContent = done+' of '+total+' stages complete';
+  document.querySelectorAll('.stage-nav a').forEach(a=>{
+    a.classList.toggle('done', !!state.done[a.dataset.id]);
+  });
+}
+
+document.querySelectorAll('[data-done]').forEach(cb=>{
+  const id = cb.dataset.done;
+  cb.checked = !!state.done[id];
+  cb.addEventListener('change', ()=>{ state.done[id]=cb.checked; save(); updateProgress(); });
+});
+
+document.querySelectorAll('[data-bookmark]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const id = btn.dataset.bookmark;
+    state.bookmarks[id] = !state.bookmarks[id];
+    btn.classList.toggle('active', state.bookmarks[id]);
+    save();
+  });
+});
+
+document.querySelectorAll('[data-notes]').forEach(ta=>{
+  ta.addEventListener('input', ()=>{ state.notes[ta.dataset.notes] = ta.value; save(); });
+});
+
+document.querySelectorAll('.copy-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const text = decodeURIComponent(btn.dataset.copy);
+    navigator.clipboard.writeText(text).then(()=>{
+      const old = btn.textContent; btn.textContent='Copied!';
+      setTimeout(()=>btn.textContent=old, 1400);
+    });
+  });
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if(confirm('Reset all progress, notes, and bookmarks?')){
+    localStorage.removeItem('ragWorkflowState');
+    location.reload();
+  }
+});
+document.getElementById('printBtn').addEventListener('click', ()=>window.print());
+
+/* theme */
+function applyTheme(){
+  document.documentElement.classList.toggle('light', state.theme==='light');
+  document.getElementById('themeBtn').textContent = state.theme==='light' ? '◑' : '◐';
+}
+document.getElementById('themeBtn').addEventListener('click', ()=>{
+  state.theme = state.theme==='light' ? 'dark' : 'light';
+  save(); applyTheme();
+});
+applyTheme();
+
+/* scroll spy */
+const sections = STAGES.map(s=>document.getElementById('stage-'+s.id));
+const navLinks = document.querySelectorAll('.stage-nav a');
+const io = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      navLinks.forEach(l=>l.classList.remove('active'));
+      const link = document.querySelector(`.stage-nav a[href="#${e.target.id}"]`);
+      if(link) link.classList.add('active');
+    }
+  });
+}, {rootMargin:'-20% 0px -70% 0px'});
+sections.forEach(s=>io.observe(s));
+
+updateProgress();
+</script>
+</body>
+</html>
